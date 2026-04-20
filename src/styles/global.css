@@ -1,0 +1,141 @@
+/* src/styles/global.css */
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --surface2: #22223b;
+  --border: #2d2d4e;
+  --primary: #6c63ff;
+  --primary-hover: #8b85ff;
+  --success: #43A047;
+  --danger: #E53935;
+  --team-a: #1E88E5;
+  --team-b: #F9A825;
+  --text: #ffffff;
+  --text-sec: #9e9e9e;
+  --text-muted: #555577;
+  --red: #E53935;
+  --yellow: #F9A825;
+  --blue: #1E88E5;
+  --green: #43A047;
+  --red-light: #FFEBEE;
+  --yellow-light: #FFFDE7;
+  --blue-light: #E3F2FD;
+  --green-light: #E8F5E9;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+}
+
+.app {
+  max-width: 680px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: 40px;
+}
+
+/* Cards */
+.card { background: var(--surface); border-radius: 16px; padding: 20px; margin-bottom: 12px; }
+.card-sm { background: var(--surface); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+
+/* Buttons */
+.btn { border: none; border-radius: 12px; padding: 12px 24px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-success { background: var(--success); color: #fff; }
+.btn-success:hover { filter: brightness(1.1); }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { filter: brightness(1.1); }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-sec); }
+.btn-outline:hover { background: var(--surface2); color: var(--text); }
+.btn-sm { padding: 7px 14px; font-size: 13px; border-radius: 8px; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* Inputs */
+input[type=text], input[type=number] {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+  transition: border-color 0.15s;
+}
+input:focus { border-color: var(--primary); }
+input::placeholder { color: var(--text-muted); }
+
+/* Badges */
+.badge { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; }
+.badge-a { background: rgba(30,136,229,0.2); color: var(--team-a); }
+.badge-b { background: rgba(249,168,37,0.2); color: var(--team-b); }
+.badge-gray { background: var(--surface2); color: var(--text-sec); }
+.badge-success { background: rgba(67,160,71,0.2); color: var(--success); }
+.badge-danger { background: rgba(229,57,53,0.2); color: var(--danger); }
+
+/* Segment control */
+.seg-group { display: flex; gap: 6px; }
+.seg-btn { flex: 1; padding: 8px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--text-sec); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+.seg-btn.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.seg-btn:hover:not(.active) { background: var(--surface2); color: var(--text); }
+
+/* Label */
+.label { font-size: 12px; color: var(--text-sec); margin-bottom: 8px; font-weight: 500; }
+h2 { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+h3 { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+  display: flex; align-items: flex-end; justify-content: center;
+  z-index: 100; animation: fadeIn 0.15s;
+}
+.modal-box {
+  background: var(--surface); border-radius: 20px 20px 0 0;
+  padding: 24px; width: 100%; max-width: 680px;
+  max-height: 90vh; overflow-y: auto;
+  animation: slideUp 0.2s ease-out;
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { transform: translateY(40px) } to { transform: translateY(0) } }
+
+/* UNO Cards */
+.uno-card {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 10px; font-weight: 700; position: relative; user-select: none;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.uno-card.md { width: 52px; height: 74px; font-size: 24px; }
+.uno-card.sm { width: 36px; height: 52px; font-size: 17px; }
+.uno-card.xs { width: 28px; height: 40px; font-size: 13px; }
+.uno-card.red { background: var(--red); }
+.uno-card.yellow { background: var(--yellow); }
+.uno-card.blue { background: var(--blue); }
+.uno-card.green { background: var(--green); }
+.uno-card .corner { position: absolute; font-size: 9px; font-weight: 700; opacity: 0.65; }
+.uno-card .corner.tl { top: 3px; left: 5px; }
+.uno-card .corner.br { bottom: 3px; right: 5px; transform: rotate(180deg); }
+
+/* Log */
+.log-entry { font-size: 13px; padding: 5px 0; border-bottom: 1px solid var(--border); line-height: 1.5; }
+.log-entry.success { color: #81c784; }
+.log-entry.fail { color: #e57373; }
+.log-entry.win { color: #64b5f6; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* Responsive */
+@media (max-width: 480px) {
+  .app { padding: 0 8px 40px; }
+  .modal-box { border-radius: 20px 20px 0 0; padding: 18px; }
+}
