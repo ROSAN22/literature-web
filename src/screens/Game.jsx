@@ -4,27 +4,34 @@ import { Card } from '../components/Card';
 import { Avatar } from '../components/Avatar';
 import {
   createGame, teamOf, opponentsOf,
-  doAsk, doDeclare, getBotMove, getAllHS, hsId, hsLabel,
-  cardHS, validDeclHS, LOW, HIGH, COLORS, COLOR_HEX,
+  doAsk, doDeclare, getBotMove, getAllHS, hsLabel,
+  cardHS, validDeclHS, LOW, HIGH, COLOR_HEX,
 } from '../game/engine';
 import {
   speak, announceAsk, announceAskResult, announceDeclare,
   announceTurn, announceGameOver, setVoiceEnabled,
 } from '../game/voice';
 
+// ─── BOT DELAY (slow enough for voice to finish) ─────────────────────────────
+const BOT_DELAY = 4500;
+
 export default function Game({ config, onNavigate, onGameOver }) {
   const { playerNames, playerCount, mode, bots } = config;
+
+  // game state
   const [game, setGame] = useState(() => createGame(playerNames, playerCount, mode));
-  const [modal, setModal] = useState(null); // 'ask' | 'declare' | 'pass'
+  const [modal, setModal] = useState(null); // 'declare' | 'pass'
   const [passPlayer, setPassPlayer] = useState('');
   const [voiceOn, setVoiceOn] = useState(true);
 
-  // Ask state
-  const [askOpp, setAskOpp] = useState(null);
-  const [askColor, setAskColor] = useState(null);
-  const [askHalf, setAskHalf] = useState(null);
-  const [askNum, setAskNum] = useState(null);
-  const [askErr, setAskErr] = useState('');
+  // Raise-hand phase: null = playing, 'A'/'B' = that team picks next asker
+  const [raiseTeam, setRaiseTeam] = useState(() => teamOf(createGame(playerNames, playerCount, mode), 0) ? 'A' : null);
+  const [handRaised, setHandRaised] = useState(false); // animation flag
+
+  // New 3-tap ask UX
+  const [selectedCard, setSelectedCard] = useState(null);   // { c, n } from hand
+  const [askTargetCard, setAskTargetCard] = useState(null); // { c, n } missing card to ask for
+  const [askOpp, setAskOpp] = useState(null);               // opponent index
 
   // Declare state
   const [declHS, setDeclHS] = useState(null);
@@ -36,7 +43,31 @@ export default function Game({ config, onNavigate, onGameOver }) {
   const viewIdx = mode === 'pass' ? game.turn : 0;
   const myHand = game.hands[viewIdx];
   const isHumanTurn = !bots[game.turn];
+  const myTeam = teamOf(game, game.turn);
+  const myTeamPlayers = myTeam === 'A' ? game.teamA : game.teamB;
+  const oppPlayers = opponentsOf(game, game.turn);
+  const teamColor = myTeam === 'A' ? '#1E88E5' : '#F9A825';
+  const validHS = validDeclHS(game, game.turn);
 
+  // ── After declare: enter raise-hand phase ──────────────────────────────────
+  function afterDeclare(g) {
+    if (g.gameOver) { setGame(g); return; }
+    // whichever team should act next, they raise hand
+    const nextTeam = teamOf(g, g.turn);
+    setRaiseTeam(nextTeam);
+    // Auto-raise for bot-only teams
+    const teamPlayers = nextTeam === 'A' ? g.teamA : g.teamB;
+    const allBots = teamPlayers.every(i => bots[i]);
+    if (allBots) {
+      const picked = teamPlayers.find(i => bots[i] && g.hands[i].length > 0) || teamPlayers[0];
+      setGame({ ...g, turn: picked });
+      setRaiseTeam(null);
+    } else {
+      setGame(g);
+    }
+  }
+
+  // ── Game turn effect ───────────────────────────────────────────────────────
   useEffect(() => {
     if (game.gameOver) {
       announceGameOver(
@@ -46,8 +77,10 @@ export default function Game({ config, onNavigate, onGameOver }) {
       onGameOver(game);
       return;
     }
+    if (raiseTeam) return; // waiting for raise-hand, don't advance
+
     if (bots[game.turn]) {
-      const t = setTimeout(() => runBot(), 1100);
+      const t = setTimeout(() => runBot(), BOT_DELAY);
       return () => clearTimeout(t);
     }
     if (mode === 'pass' && !bots[game.turn]) {
@@ -57,45 +90,86 @@ export default function Game({ config, onNavigate, onGameOver }) {
       announceTurn(playerNames[game.turn], teamOf(game, game.turn));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.turn, game.gameOver]);
+  }, [game.turn, game.gameOver, raiseTeam]);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [game.log]);
 
+  // ── Bot logic ──────────────────────────────────────────────────────────────
   function runBot() {
     const move = getBotMove(game, game.turn);
     if (move.type === 'ask') {
       announceAsk(playerNames[game.turn], playerNames[move.to], move.color, move.num);
       const { game: g, gotCard } = doAsk(game, game.turn, move.to, move.color, move.num);
-      setTimeout(() => announceAskResult(playerNames[game.turn], move.color, move.num, gotCard), 1200);
+      setTimeout(() => announceAskResult(playerNames[game.turn], move.color, move.num, gotCard), BOT_DELAY * 0.6);
       setGame(g);
     } else if (move.type === 'declare') {
       const g = doDeclare(game, game.turn, move.hsid, move.assignments);
       const team = teamOf(game, game.turn);
       const correct = g.scores[team] > game.scores[team];
       announceDeclare(playerNames[game.turn], hsLabel(move.hsid), team, correct);
-      setGame(g);
+      afterDeclare(g);
     } else {
       setGame(g => ({ ...g, turn: (g.turn + 1) % g.n }));
     }
   }
 
-  function submitAsk() {
-    setAskErr('');
-    if (askOpp === null) { setAskErr('Pick an opponent'); return; }
-    if (!askColor) { setAskErr('Pick a color'); return; }
-    if (!askHalf) { setAskErr('Pick low or high'); return; }
-    if (askNum === null) { setAskErr('Pick a number'); return; }
-    const id = hsId(askColor, askHalf);
-    if (!myHand.some(c => cardHS(c.c, c.n) === id)) { setAskErr('You need at least one card from that half-suit!'); return; }
-    if (myHand.some(c => c.c === askColor && c.n === askNum)) { setAskErr('You already have that card!'); return; }
-    announceAsk(playerNames[game.turn], playerNames[askOpp], askColor, askNum);
-    const { game: g, gotCard } = doAsk(game, game.turn, askOpp, askColor, askNum);
-    setTimeout(() => announceAskResult(playerNames[game.turn], askColor, askNum, gotCard), 1300);
-    setGame(g); setModal(null); resetAsk();
+  // ── Raise hand ─────────────────────────────────────────────────────────────
+  function raiseHand(playerIdx) {
+    setHandRaised(true);
+    setTimeout(() => setHandRaised(false), 600);
+    speak(`${playerNames[playerIdx]} will ask next`, { priority: true });
+    setGame(g => ({ ...g, turn: playerIdx }));
+    setRaiseTeam(null);
+    resetAsk();
   }
 
+  // ── 3-tap ask flow ─────────────────────────────────────────────────────────
+  function handleCardTap(card) {
+    if (!isHumanTurn || raiseTeam) return;
+    if (selectedCard && selectedCard.c === card.c && selectedCard.n === card.n) {
+      // deselect
+      setSelectedCard(null);
+      setAskTargetCard(null);
+      setAskOpp(null);
+    } else {
+      setSelectedCard(card);
+      setAskTargetCard(null);
+      setAskOpp(null);
+    }
+  }
+
+  function handleMissingCardTap(card) {
+    setAskTargetCard(card);
+    setAskOpp(null);
+  }
+
+  function handleOppTap(oppIdx) {
+    if (!askTargetCard) return;
+    // fire the ask
+    announceAsk(playerNames[game.turn], playerNames[oppIdx], askTargetCard.c, askTargetCard.n);
+    const { game: g, gotCard } = doAsk(game, game.turn, oppIdx, askTargetCard.c, askTargetCard.n);
+    setTimeout(() => announceAskResult(playerNames[game.turn], askTargetCard.c, askTargetCard.n, gotCard), 1400);
+    setGame(g);
+    setSelectedCard(null);
+    setAskTargetCard(null);
+    setAskOpp(null);
+  }
+
+  // Missing cards for selected card's half-suit
+  const selectedHS = selectedCard ? cardHS(selectedCard.c, selectedCard.n) : null;
+  const selectedHSNums = selectedHS
+    ? (selectedHS.endsWith('low') ? LOW : HIGH)
+    : [];
+  const selectedColor = selectedCard ? selectedCard.c : null;
+  const missingCards = selectedHS
+    ? selectedHSNums
+        .filter(n => !myHand.some(c => c.c === selectedColor && c.n === n))
+        .map(n => ({ c: selectedColor, n }))
+    : [];
+
+  // ── Declare ─────────────────────────────────────────────────────────────────
   function submitDeclare() {
     setDeclErr('');
     if (!declHS) { setDeclErr('Pick a half-suit'); return; }
@@ -106,19 +180,19 @@ export default function Game({ config, onNavigate, onGameOver }) {
     const team = teamOf(game, game.turn);
     const correct = g.scores[team] > game.scores[team];
     announceDeclare(playerNames[game.turn], hsLabel(declHS), team, correct);
-    setGame(g); setModal(null); resetDecl();
+    setModal(null);
+    resetDecl();
+    afterDeclare(g);
   }
 
-  function resetAsk() { setAskOpp(null); setAskColor(null); setAskHalf(null); setAskNum(null); setAskErr(''); }
+  function resetAsk() { setSelectedCard(null); setAskTargetCard(null); setAskOpp(null); }
   function resetDecl() { setDeclHS(null); setDeclAssign({}); setDeclErr(''); }
 
   const allHS = getAllHS();
-  const validHS = validDeclHS(game, game.turn);
-  const oppPlayers = opponentsOf(game, game.turn);
-  const myTeamPlayers = teamOf(game, game.turn) === 'A' ? game.teamA : game.teamB;
-  const teamColor = teamOf(game, game.turn) === 'A' ? '#1E88E5' : '#F9A825';
-  const sortedHand = [...myHand].sort((a, b) => COLORS.indexOf(a.c) - COLORS.indexOf(b.c) || a.n - b.n);
-  const nums = askHalf === 'low' ? LOW : HIGH;
+  const sortedHand = [...myHand].sort((a, b) => {
+    const colors = ['red', 'yellow', 'blue', 'green'];
+    return colors.indexOf(a.c) - colors.indexOf(b.c) || a.n - b.n;
+  });
 
   function toggleVoice() {
     const next = !voiceOn;
@@ -127,8 +201,90 @@ export default function Game({ config, onNavigate, onGameOver }) {
     if (next) speak('Voice on', { priority: true });
   }
 
+  // ── RAISE HAND SCREEN ──────────────────────────────────────────────────────
+  if (raiseTeam) {
+    const raisePlayers = raiseTeam === 'A' ? game.teamA : game.teamB;
+    const raiseColor = raiseTeam === 'A' ? '#1E88E5' : '#F9A825';
+    return (
+      <div style={{ padding: '16px 14px' }}>
+        {/* Scoreboard */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 20 }}>
+          <div style={{ textAlign: 'center', border: '2px solid #1E88E5', borderRadius: 14, padding: '10px 20px' }}>
+            <div style={{ fontSize: 34, fontWeight: 800, color: '#1E88E5' }}>{game.scores.A}</div>
+            <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team A</div>
+          </div>
+          <div style={{ fontSize: 13, color: '#555' }}>vs</div>
+          <div style={{ textAlign: 'center', border: '2px solid #F9A825', borderRadius: 14, padding: '10px 20px' }}>
+            <div style={{ fontSize: 34, fontWeight: 800, color: '#F9A825' }}>{game.scores.B}</div>
+            <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team B</div>
+          </div>
+        </div>
+
+        <div style={{
+          background: raiseColor + '15',
+          border: `1px solid ${raiseColor}44`,
+          borderRadius: 16, padding: 20, textAlign: 'center', marginBottom: 20,
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>✋</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: raiseColor, marginBottom: 4 }}>
+            Team {raiseTeam} — Who's asking next?
+          </div>
+          <div style={{ fontSize: 13, color: '#9e9e9e' }}>
+            Tap your name to take the next turn
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {raisePlayers.map(i => {
+            const isBot = bots[i];
+            const hasCards = game.hands[i].length > 0;
+            return (
+              <button
+                key={i}
+                disabled={isBot || !hasCards}
+                onClick={() => raiseHand(i)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '14px 16px', borderRadius: 14,
+                  border: `2px solid ${hasCards && !isBot ? raiseColor + '66' : '#2d2d4e'}`,
+                  background: hasCards && !isBot ? raiseColor + '12' : '#1a1a2e',
+                  cursor: hasCards && !isBot ? 'pointer' : 'not-allowed',
+                  opacity: hasCards ? 1 : 0.4,
+                  transition: 'all 0.15s',
+                }}
+              >
+                <Avatar name={playerNames[i]} index={i} size={40} />
+                <div style={{ flex: 1, textAlign: 'left' }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{playerNames[i]}</div>
+                  <div style={{ fontSize: 12, color: '#9e9e9e' }}>
+                    {isBot ? '🤖 Bot' : `${game.hands[i].length} cards`}
+                  </div>
+                </div>
+                {!isBot && hasCards && (
+                  <div style={{ fontSize: 24 }}>✋</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Log */}
+        <div className="card" style={{ marginTop: 16 }}>
+          <h3>Game log</h3>
+          <div ref={logRef} style={{ maxHeight: 100, overflowY: 'auto' }}>
+            {game.log.slice(-6).reverse().map((e, i) => (
+              <div key={i} className={`log-entry ${e.type}`}>{e.text}</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN GAME SCREEN ───────────────────────────────────────────────────────
   return (
     <div style={{ padding: '12px 14px' }}>
+
       {/* Scoreboard */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 12, position: 'relative' }}>
         <div style={{ textAlign: 'center', border: '2px solid #1E88E5', borderRadius: 14, padding: '10px 20px' }}>
@@ -140,19 +296,13 @@ export default function Game({ config, onNavigate, onGameOver }) {
           <div style={{ fontSize: 34, fontWeight: 800, color: '#F9A825' }}>{game.scores.B}</div>
           <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team B</div>
         </div>
-        {/* Voice toggle */}
-        <button
-          onClick={toggleVoice}
-          title={voiceOn ? 'Mute voice' : 'Enable voice'}
-          style={{
-            position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
-            background: voiceOn ? '#1a1a3e' : '#2d2d4e',
-            border: `1px solid ${voiceOn ? '#6c63ff' : '#555'}`,
-            borderRadius: 10, padding: '6px 10px', cursor: 'pointer',
-            fontSize: 18, lineHeight: 1, color: voiceOn ? '#a89df5' : '#555',
-            transition: 'all 0.2s',
-          }}
-        >
+        <button onClick={toggleVoice} title={voiceOn ? 'Mute' : 'Unmute'} style={{
+          position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+          background: voiceOn ? '#1a1a3e' : '#2d2d4e',
+          border: `1px solid ${voiceOn ? '#6c63ff' : '#555'}`,
+          borderRadius: 10, padding: '6px 10px', cursor: 'pointer',
+          fontSize: 18, lineHeight: 1, color: voiceOn ? '#a89df5' : '#555', transition: 'all 0.2s',
+        }}>
           {voiceOn ? '🔊' : '🔇'}
         </button>
       </div>
@@ -183,16 +333,90 @@ export default function Game({ config, onNavigate, onGameOver }) {
         })}
       </div>
 
-      {/* Hand */}
+      {/* ── HAND + 3-TAP ASK UX ── */}
       <div className="card" style={{ marginBottom: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <h3 style={{ margin: 0 }}>{mode === 'pass' ? `${playerNames[viewIdx]}'s hand` : 'Your hand'}</h3>
           <span className="badge badge-gray">{myHand.length} cards</span>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {sortedHand.map((c, i) => <Card key={i} color={c.c} num={c.n} size="sm" />)}
+
+        {/* Cards in hand */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: selectedCard ? 12 : 0 }}>
+          {sortedHand.map((c, i) => {
+            const isSelected = selectedCard && selectedCard.c === c.c && selectedCard.n === c.n;
+            const sameHS = selectedCard && cardHS(c.c, c.n) === selectedHS;
+            return (
+              <div
+                key={i}
+                onClick={() => handleCardTap(c)}
+                style={{
+                  cursor: isHumanTurn ? 'pointer' : 'default',
+                  opacity: selectedCard && !sameHS ? 0.45 : 1,
+                  transition: 'opacity 0.2s, transform 0.2s',
+                  transform: sameHS && !isSelected ? 'translateY(-2px)' : 'none',
+                }}
+              >
+                <Card color={c.c} num={c.n} size="sm" selected={isSelected} />
+              </div>
+            );
+          })}
           {myHand.length === 0 && <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>No cards left</div>}
         </div>
+
+        {/* Step 2: Missing cards from selected half-suit */}
+        {selectedCard && isHumanTurn && (
+          <div style={{ borderTop: '1px solid #2d2d4e', paddingTop: 12 }}>
+            <div style={{ fontSize: 12, color: '#9e9e9e', marginBottom: 8 }}>
+              Missing from <b style={{ color: COLOR_HEX[selectedColor] }}>{selectedColor} {selectedHS?.split('-')[1]}</b> — tap to ask for:
+            </div>
+            {missingCards.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555' }}>You have all cards in this half-suit! Declare instead.</div>
+            ) : (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {missingCards.map((mc, i) => {
+                  const isTgt = askTargetCard && askTargetCard.c === mc.c && askTargetCard.n === mc.n;
+                  return (
+                    <div key={i} onClick={() => handleMissingCardTap(mc)} style={{ opacity: isTgt ? 1 : 0.65, transform: isTgt ? 'scale(1.1)' : 'none', transition: 'all 0.15s', cursor: 'pointer' }}>
+                      <Card color={mc.c} num={mc.n} size="sm" selected={isTgt} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 3: Opponent picker */}
+        {askTargetCard && isHumanTurn && (
+          <div style={{ borderTop: '1px solid #2d2d4e', paddingTop: 12, marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: '#9e9e9e', marginBottom: 8 }}>
+              Ask who for <b style={{ color: COLOR_HEX[askTargetCard.c] }}>{askTargetCard.c} {askTargetCard.n}</b>?
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {oppPlayers.map(i => (
+                <div key={i} onClick={() => handleOppTap(i)} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px', borderRadius: 12,
+                  border: `2px solid ${askOpp === i ? '#6c63ff' : '#2d2d4e'}`,
+                  background: askOpp === i ? '#6c63ff22' : '#22223b',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}>
+                  <Avatar name={playerNames[i]} index={i} size={28} />
+                  <span style={{ fontSize: 13, color: '#fff', fontWeight: 600 }}>{playerNames[i]}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: '#555', marginTop: 8 }}>Tap a player to ask them →</div>
+          </div>
+        )}
+
+        {/* Cancel selection */}
+        {selectedCard && isHumanTurn && (
+          <button onClick={resetAsk} style={{
+            marginTop: 12, fontSize: 12, color: '#555', background: 'transparent',
+            border: 'none', cursor: 'pointer', padding: 0,
+          }}>✕ Cancel selection</button>
+        )}
       </div>
 
       {/* Half-suits */}
@@ -223,15 +447,15 @@ export default function Game({ config, onNavigate, onGameOver }) {
         </div>
       </div>
 
-      {/* Actions */}
+      {/* Declare button (only shown separately now) */}
       {isHumanTurn && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
-          <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => { resetAsk(); setModal('ask'); }}>🙋 Ask for a card</button>
-          <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => { resetDecl(); setDeclHS(validHS[0] || null); setModal('declare'); }}>📣 Declare</button>
-        </div>
+        <button className="btn btn-danger" style={{ width: '100%', padding: 14, marginBottom: 10 }}
+          onClick={() => { resetDecl(); setDeclHS(validHS[0] || null); setModal('declare'); }}>
+          📣 Declare a half-suit
+        </button>
       )}
 
-      {/* Log */}
+      {/* Game Log */}
       <div className="card">
         <h3>Game log</h3>
         <div ref={logRef} style={{ maxHeight: 120, overflowY: 'auto' }}>
@@ -242,68 +466,11 @@ export default function Game({ config, onNavigate, onGameOver }) {
         </div>
       </div>
 
-      {/* Ask Modal */}
-      {modal === 'ask' && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(null)}>
-          <div className="modal-box">
-            <h3>Ask for a card</h3>
-
-            <div className="label" style={{ marginTop: 12 }}>Ask opponent</div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-              {oppPlayers.map(i => (
-                <div key={i} onClick={() => setAskOpp(i)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 10, border: `1px solid ${askOpp === i ? '#6c63ff' : '#2d2d4e'}`, background: askOpp === i ? '#6c63ff22' : '#22223b', cursor: 'pointer' }}>
-                  <Avatar name={playerNames[i]} index={i} size={26} />
-                  <span style={{ fontSize: 13, color: askOpp === i ? '#a89df5' : '#9e9e9e' }}>{playerNames[i]}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="label">Color</div>
-            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-              {COLORS.map(c => (
-                <div key={c} onClick={() => { setAskColor(c); setAskNum(null); }} style={{ width: 48, height: 48, borderRadius: '50%', background: COLOR_HEX[c], cursor: 'pointer', border: askColor === c ? '3px solid #fff' : '3px solid transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#fff', fontSize: 13 }}>
-                  {c[0].toUpperCase()}
-                </div>
-              ))}
-            </div>
-
-            <div className="label">Half-suit</div>
-            <div className="seg-group" style={{ marginBottom: 14 }}>
-              {['low', 'high'].map(h => (
-                <button key={h} className={`seg-btn ${askHalf === h ? 'active' : ''}`} onClick={() => { setAskHalf(h); setAskNum(null); }}>
-                  {h === 'low' ? 'Low (0–4)' : 'High (5–9)'}
-                </button>
-              ))}
-            </div>
-
-            {askColor && askHalf && (
-              <>
-                <div className="label">Number</div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-                  {nums.map(n => (
-                    <div key={n} onClick={() => setAskNum(n)} style={{ width: 48, height: 48, borderRadius: 10, border: `2px solid ${askNum === n ? '#6c63ff' : COLOR_HEX[askColor] + '66'}`, background: askNum === n ? '#6c63ff' : '#22223b', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, color: '#fff' }}>
-                      {n}
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {askErr && <div style={{ fontSize: 13, color: '#e57373', marginBottom: 10 }}>{askErr}</div>}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn btn-primary" style={{ flex: 1 }} onClick={submitAsk}>Ask</button>
-              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => setModal(null)}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Declare Modal */}
       {modal === 'declare' && (
         <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setModal(null)}>
           <div className="modal-box">
             <h3>Declare half-suit</h3>
-
             <div className="label" style={{ marginTop: 12 }}>Which half-suit?</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {validHS.length === 0 && <div style={{ fontSize: 13, color: '#555' }}>No valid half-suits to declare</div>}
@@ -313,7 +480,6 @@ export default function Game({ config, onNavigate, onGameOver }) {
                 </div>
               ))}
             </div>
-
             {declHS && (() => {
               const [col, half] = declHS.split('-');
               const nums = half === 'low' ? LOW : HIGH;
@@ -336,7 +502,6 @@ export default function Game({ config, onNavigate, onGameOver }) {
                 </>
               );
             })()}
-
             {declErr && <div style={{ fontSize: 13, color: '#e57373', marginBottom: 10 }}>{declErr}</div>}
             <div style={{ display: 'flex', gap: 10 }}>
               <button className="btn btn-danger" style={{ flex: 1 }} onClick={submitDeclare}>📣 Declare!</button>
