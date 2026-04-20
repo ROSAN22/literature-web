@@ -1,5 +1,5 @@
 // src/screens/Game.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card } from '../components/Card';
 import { Avatar } from '../components/Avatar';
 import {
@@ -38,7 +38,6 @@ export default function Game({ config, onNavigate, onGameOver }) {
   const [declAssign, setDeclAssign] = useState({});
   const [declErr, setDeclErr] = useState('');
 
-  const logRef = useRef(null);
 
   const viewIdx = mode === 'pass' ? game.turn : 0;
   const myHand = game.hands[viewIdx];
@@ -92,9 +91,6 @@ export default function Game({ config, onNavigate, onGameOver }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.turn, game.gameOver, raiseTeam]);
 
-  useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
-  }, [game.log]);
 
   // ── Bot logic ──────────────────────────────────────────────────────────────
   function runBot() {
@@ -268,33 +264,33 @@ export default function Game({ config, onNavigate, onGameOver }) {
           })}
         </div>
 
-        {/* Log */}
-        <div className="card" style={{ marginTop: 16 }}>
-          <h3>Game log</h3>
-          <div ref={logRef} style={{ maxHeight: 100, overflowY: 'auto' }}>
-            {game.log.slice(-6).reverse().map((e, i) => (
-              <div key={i} className={`log-entry ${e.type}`}>{e.text}</div>
-            ))}
-          </div>
-        </div>
       </div>
     );
   }
 
   // ── MAIN GAME SCREEN ───────────────────────────────────────────────────────
   return (
-    <div style={{ padding: '12px 14px' }}>
+    <div style={{ padding: '12px 14px', paddingBottom: 32 }}>
 
-      {/* Scoreboard */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 12, position: 'relative' }}>
-        <div style={{ textAlign: 'center', border: '2px solid #1E88E5', borderRadius: 14, padding: '10px 20px' }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: '#1E88E5' }}>{game.scores.A}</div>
-          <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team A</div>
+      {/* Scoreboard — glass gradient */}
+      <div style={{
+        background: 'linear-gradient(135deg, rgba(30,136,229,0.12), rgba(249,168,37,0.12))',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 20, padding: '14px 16px', marginBottom: 14,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 0, position: 'relative',
+        backdropFilter: 'blur(8px)',
+      }}>
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#1E88E5', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Team A</div>
+          <div style={{ fontSize: 42, fontWeight: 900, color: '#1E88E5', lineHeight: 1 }}>{game.scores.A}</div>
         </div>
-        <div style={{ fontSize: 13, color: '#555' }}>vs</div>
-        <div style={{ textAlign: 'center', border: '2px solid #F9A825', borderRadius: 14, padding: '10px 20px' }}>
-          <div style={{ fontSize: 34, fontWeight: 800, color: '#F9A825' }}>{game.scores.B}</div>
-          <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team B</div>
+        <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.1)', margin: '0 16px' }} />
+        <div style={{ fontSize: 11, color: '#444', fontWeight: 700 }}>VS</div>
+        <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,0.1)', margin: '0 16px' }} />
+        <div style={{ flex: 1, textAlign: 'center' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#F9A825', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2 }}>Team B</div>
+          <div style={{ fontSize: 42, fontWeight: 900, color: '#F9A825', lineHeight: 1 }}>{game.scores.B}</div>
         </div>
         <button onClick={toggleVoice} title={voiceOn ? 'Mute' : 'Unmute'} style={{
           position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
@@ -308,33 +304,61 @@ export default function Game({ config, onNavigate, onGameOver }) {
       </div>
 
       {/* Turn banner */}
-      <div style={{ background: teamColor + '18', border: `1px solid ${teamColor}44`, borderRadius: 12, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <Avatar name={playerNames[game.turn]} index={game.turn} size={30} />
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: teamColor }}>
-            {bots[game.turn] ? `${playerNames[game.turn]} is thinking...` : `${playerNames[game.turn]}'s turn`}
+      <div style={{
+        background: `linear-gradient(135deg, ${teamColor}22, ${teamColor}08)`,
+        border: `1px solid ${teamColor}55`,
+        borderRadius: 16, padding: '12px 16px',
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12,
+      }}>
+        <Avatar name={playerNames[game.turn]} index={game.turn} size={36} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: teamColor }}>
+            {bots[game.turn] ? `⏳ ${playerNames[game.turn]} is thinking...` : `${playerNames[game.turn]}'s turn`}
           </div>
-          <div style={{ fontSize: 11, color: '#9e9e9e' }}>Team {teamOf(game, game.turn)}</div>
+          <div style={{ fontSize: 11, color: '#9e9e9e', marginTop: 1 }}>Team {teamOf(game, game.turn)}</div>
         </div>
+        {bots[game.turn] && (
+          <div style={{ display: 'flex', gap: 3 }}>
+            {[0,1,2].map(d => (
+              <div key={d} style={{
+                width: 6, height: 6, borderRadius: '50%', background: teamColor,
+                animation: `pulse 1.2s ${d * 0.2}s infinite`,
+                opacity: 0.7,
+              }} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Players row */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 8, marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4, marginBottom: 12 }}>
         {playerNames.map((name, i) => {
           const tc = teamOf(game, i) === 'A' ? '#1E88E5' : '#F9A825';
           const active = i === game.turn;
           return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, background: active ? '#22223b' : 'transparent', borderRadius: 10, padding: '6px 8px', border: `1px solid ${active ? tc : '#2d2d4e'}` }}>
-              <Avatar name={name} index={i} size={28} />
-              <div style={{ fontSize: 10, color: '#9e9e9e', marginTop: 3, maxWidth: 48, textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{name}</div>
-              <div style={{ fontSize: 10, color: '#555' }}>{game.hands[i].length}🃏</div>
+            <div key={i} style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0,
+              background: active ? tc + '22' : 'rgba(255,255,255,0.03)',
+              borderRadius: 12, padding: '8px 10px',
+              border: `1.5px solid ${active ? tc + '88' : 'rgba(255,255,255,0.06)'}`,
+              transition: 'all 0.2s',
+              minWidth: 54,
+            }}>
+              <Avatar name={name} index={i} size={30} />
+              <div style={{ fontSize: 10, color: active ? '#fff' : '#9e9e9e', marginTop: 4, maxWidth: 50, textAlign: 'center', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', fontWeight: active ? 700 : 400 }}>{name}</div>
+              <div style={{ fontSize: 10, color: active ? tc : '#444', marginTop: 1 }}>{game.hands[i].length} 🃏</div>
             </div>
           );
         })}
       </div>
 
       {/* ── HAND + 3-TAP ASK UX ── */}
-      <div className="card" style={{ marginBottom: 10 }}>
+      <div style={{
+        background: 'rgba(255,255,255,0.04)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 20, padding: 16, marginBottom: 12,
+        backdropFilter: 'blur(6px)',
+      }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <h3 style={{ margin: 0 }}>{mode === 'pass' ? `${playerNames[viewIdx]}'s hand` : 'Your hand'}</h3>
           <span className="badge badge-gray">{myHand.length} cards</span>
@@ -419,9 +443,13 @@ export default function Game({ config, onNavigate, onGameOver }) {
         )}
       </div>
 
-      {/* Half-suits */}
-      <div className="card" style={{ marginBottom: 10 }}>
-        <h3>Half-suits</h3>
+      {/* Half-suits grid */}
+      <div style={{
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 20, padding: 16, marginBottom: 12,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Half-suits</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
           {allHS.map(id => {
             const [col, half] = id.split('-');
@@ -429,17 +457,16 @@ export default function Game({ config, onNavigate, onGameOver }) {
             const myCount = myHand.filter(c => cardHS(c.c, c.n) === id).length;
             return (
               <div key={id} style={{
-                borderRadius: 10, padding: '8px 6px',
-                border: `1px solid ${claimed === 'A' ? '#1E88E5' : claimed === 'B' ? '#F9A825' : '#2d2d4e'}`,
-                background: claimed === 'A' ? '#1E88E522' : claimed === 'B' ? '#F9A82522' : '#22223b',
+                borderRadius: 12, padding: '8px 6px', textAlign: 'center',
+                border: `1.5px solid ${claimed === 'A' ? '#1E88E588' : claimed === 'B' ? '#F9A82588' : 'rgba(255,255,255,0.07)'}`,
+                background: claimed === 'A' ? '#1E88E518' : claimed === 'B' ? '#F9A82518' : 'rgba(255,255,255,0.03)',
+                transition: 'all 0.2s',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: COLOR_HEX[col], flexShrink: 0 }} />
-                  <div style={{ fontSize: 10, fontWeight: 600, color: '#fff', lineHeight: 1.2 }}>{col[0].toUpperCase()+col.slice(1)} {half}</div>
-                </div>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: COLOR_HEX[col], margin: '0 auto 4px' }} />
+                <div style={{ fontSize: 9, fontWeight: 700, color: claimed ? '#fff' : '#888', lineHeight: 1.3, textTransform: 'capitalize' }}>{col.slice(0,3)} {half}</div>
                 {claimed
-                  ? <span className={`badge badge-${claimed.toLowerCase()}`} style={{ fontSize: 10 }}>Team {claimed}</span>
-                  : <div style={{ fontSize: 10, color: '#555' }}>You: {myCount}</div>
+                  ? <div style={{ fontSize: 9, fontWeight: 800, color: claimed === 'A' ? '#1E88E5' : '#F9A825', marginTop: 2 }}>✓ T{claimed}</div>
+                  : <div style={{ fontSize: 9, color: myCount > 0 ? '#a89df5' : '#444', marginTop: 2 }}>{myCount > 0 ? `You: ${myCount}` : '—'}</div>
                 }
               </div>
             );
@@ -447,24 +474,22 @@ export default function Game({ config, onNavigate, onGameOver }) {
         </div>
       </div>
 
-      {/* Declare button (only shown separately now) */}
+      {/* Declare button */}
       {isHumanTurn && (
-        <button className="btn btn-danger" style={{ width: '100%', padding: 14, marginBottom: 10 }}
-          onClick={() => { resetDecl(); setDeclHS(validHS[0] || null); setModal('declare'); }}>
+        <button
+          onClick={() => { resetDecl(); setDeclHS(validHS[0] || null); setModal('declare'); }}
+          style={{
+            width: '100%', padding: '15px', marginBottom: 8,
+            background: 'linear-gradient(135deg, #E53935, #b71c1c)',
+            border: 'none', borderRadius: 16, color: '#fff',
+            fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            boxShadow: '0 4px 16px rgba(229,57,53,0.35)',
+            transition: 'all 0.15s',
+          }}
+        >
           📣 Declare a half-suit
         </button>
       )}
-
-      {/* Game Log */}
-      <div className="card">
-        <h3>Game log</h3>
-        <div ref={logRef} style={{ maxHeight: 120, overflowY: 'auto' }}>
-          {game.log.length === 0 && <div style={{ fontSize: 13, color: '#555', textAlign: 'center', padding: 8 }}>Game just started!</div>}
-          {game.log.slice(-12).reverse().map((e, i) => (
-            <div key={i} className={`log-entry ${e.type}`}>{e.text}</div>
-          ))}
-        </div>
-      </div>
 
       {/* Declare Modal */}
       {modal === 'declare' && (
