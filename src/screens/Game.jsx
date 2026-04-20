@@ -7,12 +7,17 @@ import {
   doAsk, doDeclare, getBotMove, getAllHS, hsId, hsLabel,
   cardHS, validDeclHS, LOW, HIGH, COLORS, COLOR_HEX,
 } from '../game/engine';
+import {
+  speak, announceAsk, announceAskResult, announceDeclare,
+  announceTurn, announceGameOver, setVoiceEnabled,
+} from '../game/voice';
 
 export default function Game({ config, onNavigate, onGameOver }) {
   const { playerNames, playerCount, mode, bots } = config;
   const [game, setGame] = useState(() => createGame(playerNames, playerCount, mode));
   const [modal, setModal] = useState(null); // 'ask' | 'declare' | 'pass'
   const [passPlayer, setPassPlayer] = useState('');
+  const [voiceOn, setVoiceOn] = useState(true);
 
   // Ask state
   const [askOpp, setAskOpp] = useState(null);
@@ -33,7 +38,14 @@ export default function Game({ config, onNavigate, onGameOver }) {
   const isHumanTurn = !bots[game.turn];
 
   useEffect(() => {
-    if (game.gameOver) { onGameOver(game); return; }
+    if (game.gameOver) {
+      announceGameOver(
+        game.scores.A > game.scores.B ? 'A' : 'B',
+        game.scores.A, game.scores.B
+      );
+      onGameOver(game);
+      return;
+    }
     if (bots[game.turn]) {
       const t = setTimeout(() => runBot(), 1100);
       return () => clearTimeout(t);
@@ -41,6 +53,8 @@ export default function Game({ config, onNavigate, onGameOver }) {
     if (mode === 'pass' && !bots[game.turn]) {
       setPassPlayer(playerNames[game.turn]);
       setModal('pass');
+    } else if (!bots[game.turn]) {
+      announceTurn(playerNames[game.turn], teamOf(game, game.turn));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.turn, game.gameOver]);
@@ -52,10 +66,16 @@ export default function Game({ config, onNavigate, onGameOver }) {
   function runBot() {
     const move = getBotMove(game, game.turn);
     if (move.type === 'ask') {
-      const { game: g } = doAsk(game, game.turn, move.to, move.color, move.num);
+      announceAsk(playerNames[game.turn], playerNames[move.to], move.color, move.num);
+      const { game: g, gotCard } = doAsk(game, game.turn, move.to, move.color, move.num);
+      setTimeout(() => announceAskResult(playerNames[game.turn], move.color, move.num, gotCard), 1200);
       setGame(g);
     } else if (move.type === 'declare') {
-      setGame(doDeclare(game, game.turn, move.hsid, move.assignments));
+      const g = doDeclare(game, game.turn, move.hsid, move.assignments);
+      const team = teamOf(game, game.turn);
+      const correct = g.scores[team] > game.scores[team];
+      announceDeclare(playerNames[game.turn], hsLabel(move.hsid), team, correct);
+      setGame(g);
     } else {
       setGame(g => ({ ...g, turn: (g.turn + 1) % g.n }));
     }
@@ -70,7 +90,9 @@ export default function Game({ config, onNavigate, onGameOver }) {
     const id = hsId(askColor, askHalf);
     if (!myHand.some(c => cardHS(c.c, c.n) === id)) { setAskErr('You need at least one card from that half-suit!'); return; }
     if (myHand.some(c => c.c === askColor && c.n === askNum)) { setAskErr('You already have that card!'); return; }
-    const { game: g } = doAsk(game, game.turn, askOpp, askColor, askNum);
+    announceAsk(playerNames[game.turn], playerNames[askOpp], askColor, askNum);
+    const { game: g, gotCard } = doAsk(game, game.turn, askOpp, askColor, askNum);
+    setTimeout(() => announceAskResult(playerNames[game.turn], askColor, askNum, gotCard), 1300);
     setGame(g); setModal(null); resetAsk();
   }
 
@@ -80,8 +102,11 @@ export default function Game({ config, onNavigate, onGameOver }) {
     const [, half] = declHS.split('-');
     const nums = half === 'low' ? LOW : HIGH;
     if (nums.some(n => declAssign[n] === undefined)) { setDeclErr('Assign all 5 cards'); return; }
-    setGame(doDeclare(game, game.turn, declHS, declAssign));
-    setModal(null); resetDecl();
+    const g = doDeclare(game, game.turn, declHS, declAssign);
+    const team = teamOf(game, game.turn);
+    const correct = g.scores[team] > game.scores[team];
+    announceDeclare(playerNames[game.turn], hsLabel(declHS), team, correct);
+    setGame(g); setModal(null); resetDecl();
   }
 
   function resetAsk() { setAskOpp(null); setAskColor(null); setAskHalf(null); setAskNum(null); setAskErr(''); }
@@ -95,10 +120,17 @@ export default function Game({ config, onNavigate, onGameOver }) {
   const sortedHand = [...myHand].sort((a, b) => COLORS.indexOf(a.c) - COLORS.indexOf(b.c) || a.n - b.n);
   const nums = askHalf === 'low' ? LOW : HIGH;
 
+  function toggleVoice() {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    setVoiceEnabled(next);
+    if (next) speak('Voice on', { priority: true });
+  }
+
   return (
     <div style={{ padding: '12px 14px' }}>
       {/* Scoreboard */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 12, position: 'relative' }}>
         <div style={{ textAlign: 'center', border: '2px solid #1E88E5', borderRadius: 14, padding: '10px 20px' }}>
           <div style={{ fontSize: 34, fontWeight: 800, color: '#1E88E5' }}>{game.scores.A}</div>
           <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team A</div>
@@ -108,6 +140,21 @@ export default function Game({ config, onNavigate, onGameOver }) {
           <div style={{ fontSize: 34, fontWeight: 800, color: '#F9A825' }}>{game.scores.B}</div>
           <div style={{ fontSize: 12, color: '#9e9e9e' }}>Team B</div>
         </div>
+        {/* Voice toggle */}
+        <button
+          onClick={toggleVoice}
+          title={voiceOn ? 'Mute voice' : 'Enable voice'}
+          style={{
+            position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)',
+            background: voiceOn ? '#1a1a3e' : '#2d2d4e',
+            border: `1px solid ${voiceOn ? '#6c63ff' : '#555'}`,
+            borderRadius: 10, padding: '6px 10px', cursor: 'pointer',
+            fontSize: 18, lineHeight: 1, color: voiceOn ? '#a89df5' : '#555',
+            transition: 'all 0.2s',
+          }}
+        >
+          {voiceOn ? '🔊' : '🔇'}
+        </button>
       </div>
 
       {/* Turn banner */}
